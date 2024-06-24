@@ -1,0 +1,4 @@
+#ifndef TIMESTAMP_H
+#define TIMESTAMP_H
+#define TIMESTAMP "D2024-06-24T08:28:17"
+#endif
