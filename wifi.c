@@ -154,12 +154,18 @@ void	LoopWifi(void) {
         if (CheckWifi())
             break;
         tcp_client_init(&tcpc);
-        tcp_client_open(&tcpc);
-        wifi_state = ST_TCP_CONNECTING;
+        if (tcp_client_open(&tcpc))
+       	wifi_state = ST_TCP_CONNECTING;
         break;
     case ST_TCP_CONNECTING:
-        if (cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP)
-            break;
+
+        if (cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) == CYW43_LINK_UP) {
+		if (sys.last_read + 10 > sys.seconds) {
+			
+			break;
+		}
+		printf("TIMEOUT BREAK\r\n");
+	  }
         wifi_state = ST_WIFI_SCAN;
         break;
 	}
@@ -258,6 +264,7 @@ err_t tcp_client_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err
     if (!p) {
         return tcp_result(arg, -1);
     }
+    
     // this method is callback from lwIP, so cyw43_arch_lwip_begin is not required, however you
     // can use this method to cause an assertion in debug mode, if this method is called when
     // cyw43_arch_lwip_begin IS needed
@@ -308,6 +315,7 @@ static bool tcp_client_open(void *arg) {
     }
 
     tcp_arg(state->tcp_pcb, state);
+    //tcp_
     tcp_poll(state->tcp_pcb, tcp_client_poll, POLL_TIME_S * 2);
     tcp_sent(state->tcp_pcb, tcp_client_sent);
     tcp_recv(state->tcp_pcb, tcp_client_recv);

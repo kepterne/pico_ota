@@ -359,6 +359,11 @@ void	loopSys(SystemConfig *s) {
 	//if (s->seconds > )
 		LoopWifi();
 #endif
+	if (sys.saveconfig) {
+		SaveConfig(&config);
+		sys.saveconfig = 0;
+		printf("\r\nCONFIG SAVED\r\n");
+	}
 }
 
 void	init_version(void) {

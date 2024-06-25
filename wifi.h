@@ -8,21 +8,21 @@
 #include <lwip/pbuf.h>
 #include <lwip/tcp.h>
 
-#define BUF_SIZE 		2048
-#define	POLL_TIME_S		20
+#define 	BUF_SIZE 		2048
+#define	POLL_TIME_S		5
 #define	TEST_ITERATIONS	10
 
 
 typedef struct TCP_CLIENT_T_ {
-    struct tcp_pcb	*tcp_pcb;
-    ip_addr_t		remote_addr;
-    uint8_t			buffer[BUF_SIZE];
-	uint8_t			senddata[BUF_SIZE];
-    int				buffer_len;
-    int				sent_len;
-    bool			complete;
-    int				run_count;
-    bool			connected;
+	struct tcp_pcb	*tcp_pcb;
+	ip_addr_t		remote_addr;
+	uint8_t		buffer[BUF_SIZE];
+	uint8_t		senddata[BUF_SIZE];
+	int			buffer_len;
+	int			sent_len;
+	bool			complete;
+	int			run_count;
+	bool			connected;
 } TCP_CLIENT_T;
 
 

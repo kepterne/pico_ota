@@ -47,8 +47,18 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 	switch (cmd) {
 	case CMD_PARAM: {
 		printf("[%s] = [%s]\r\n", p2, p3);
-
-		if (strcasecmp(p2, "now") == 0) {
+		if (strcasecmp(p2, "firmware") == 0) {
+			if (strcmp(config.firmwarename, p3) >= 0) {
+				printf("\r\nUPDATE IS NOT REQUIRED %s > %s\r\n", config.firmwarename, p3);
+				
+			} else {
+				printf("\r\nUPDATE IS REQUIRED\r\n");
+				strcpy(config.firmwarename, p3);
+				config.newPos = 0;
+				config.doupdate = 1;
+				sys.saveconfig = 1;
+			}
+		} else if (strcasecmp(p2, "now") == 0) {
 			time_t	ts = 0;
 			sscanf(p3, "%lu", &ts);
 			ts += 3 * 3600;	// TURKISH TZ FIX
@@ -86,6 +96,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 		TCP_CLIENT_T	*tc = (TCP_CLIENT_T *) p1;
 		int		l = (int) p3;
 		char	*p = p2;
+		sys.last_read = sys.seconds;
 		printf("TCP DATA < %3d:[%s]\r\n", l, p);
 		if (strncasecmp(p, "+SERVER: ", 9))
 			return;
@@ -95,12 +106,16 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			ProcessFields(tc, p);
 		} else if (strncmp(p, "PING ", 5) == 0) {
 			uint64_t		i;
-			
+			int			l = 0;
 			if ((i = get64(p + 5))) {
 				((uint32_t *) &i)[0] ^= 0x17891789l;
 				((uint32_t *) &i)[1] ^= 0x29091999l;
-				sprintf(tc->senddata, "\nPING: %" PRIu64 "\n", i);
-				
+				l = sprintf(tc->senddata, "\nPING: %" PRIu64 "\n", i);
+			}
+			if (config.doupdate) {
+				printf("\r\nUPDATE IS REQUESTED %d\r\n", l);
+				printf("\nGET %d %d\n", config.newPos, FLASH_PAGE_SIZE);
+				sprintf(tc->senddata + l, "\nGET %d %d\n", config.newPos, FLASH_PAGE_SIZE);
 			}
 		} else if (strncmp(p, "KIMO ", 5) == 0) {
 			char  challenge[64];
@@ -134,6 +149,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 
 	case CMD_WIFI_CONNECTED: {
 		printf("Connected to : \"%s\" ip: %s\r\n", p1, p2);
+		sys.last_read = sys.seconds;
 		if (config.lcdon) {
 			lcd_set_cursor(3, 0);
 			lcd_string(p2);

@@ -32,6 +32,8 @@ typedef	struct {
 	uint8_t	usb_ack;
 	float		internal_temp;
 	void		(*cb)(uint32_t, char *, char *, char *, char *);
+	uint64_t	last_read;
+	int		saveconfig;
 } SystemConfig;
 
 uint64_t	get64(char *p);

@@ -35,10 +35,10 @@ typedef	struct {
 	int			hostport;
 	char			aps[4][2][32];
 	uint64_t		runcount;
-	char			newVersion[64];
+	int			doupdate;
 	int			newSize;
 	int			newPos;
-	int			firmwarename[128];
+	char			firmwarename[128];
 } StoredConfig;
 typedef	struct {
 	char		stored_config[FLASH_SECTOR_SIZE];
@@ -52,7 +52,7 @@ typedef	union {
 #ifdef	main_c
 		char		SharedSecret[64] = "canEliffilEnac";
 		StoredConfig	config = {
-			"pico_ota_2",			// DEGERLERDE DEGISIKLIK YAPINCA BUT STRING'I DE DEGISTIRIN
+			"pico_ota_1",			// DEGERLERDE DEGISIKLIK YAPINCA BUT STRING'I DE DEGISTIRIN
 			"pico_ota",
 			1,						// echo on
 			1,						// lcd on
