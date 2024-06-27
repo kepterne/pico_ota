@@ -6,8 +6,8 @@ set(ENV{VERSION_MAJOR} 1)
 set(ENV{VERSION_MINOR} 0)
 set(ENV{PROJECT} pico_ota)
 
-include(pico_sdk_import.cmake)
-#include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+#include(pico_sdk_import.cmake)
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
 # Define project
 project($ENV{PROJECT})
@@ -15,7 +15,7 @@ pico_sdk_init()
 add_definitions( -DVERSION_MAJOR=$ENV{VERSION_MAJOR} )
 add_definitions( -DVERSION_MINOR=$ENV{VERSION_MINOR} )
 
-add_executable($ENV{PROJECT} pico_wifi.c common.c analog_reader.c lcd_display.c wifi.c md5.c)
+add_executable($ENV{PROJECT} main.c common.c analog_reader.c lcd_display.c wifi.c md5.c)
 
 #
 target_include_directories($ENV{PROJECT} PRIVATE

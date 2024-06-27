@@ -50,10 +50,12 @@ bool __no_inline_not_in_flash_func(get_bootsel_button)() {
 
 time_t	getTime(void) {
 	time_t	t;
-	if (!sys.tstart)
+	if (!sys.sStartTime)
 		return 0;
-	return (sys.unow - sys.ustart - sys.tstart * 1000000 + sys.tbase * 1000000 + sys.toff) / 1000000;
-	
+	return 
+		(
+			sys.usNow - sys.usStartTime  // us since boot
+			- sys.sStartTime * 1000000 + sys.sBaseTime * 1000000 + sys.usOffset) / 1000000;
 }
 
 void	GetBoardID(char *p) {
@@ -105,19 +107,13 @@ uint storage_get_flash_capacity(void) {
 void	initSys(SystemConfig *s, void (*f)(uint32_t, char *, char *, char *, char *)) {
 	StoredConfig	*sc;
 	char	*pp;
-#ifndef	DEBUG
-	stdio_uart_init_full(uart1, 115200, 4, 5);
-#else
-	stdio_init_all();
-#endif
-	sleep_ms(100);
-	s->usb_connected = 0;
-	s->usb_ack = 0;
-	s->ustart = time_us_64();
+	
+	stdio_usb_init();
+	
+	s->usStartTime = time_us_64();
 	s->cb = f;
 	s->bootsel = 0;
 	s->bootsel_start = 0;
-	s->usb_connected = 0;
 	GetBoardID(s->id);
 	strcpy(s->flashid, s->id);
 #ifndef	WIFI
@@ -169,7 +165,7 @@ void	LoopButton(SystemConfig *s) {
 	uint64_t	d;
 	if (s->bootsel) {
 		int	k = 0;
-		d = s->unow - s->bootsel_start;
+		d = s->usNow - s->bootsel_start;
 		if (d >= BOOTSEL_COUNTER) {
 			k = ((d - BOOTSEL_COUNTER)/BOOTSEL_BLINKER) & 1;
 		} else if (d >= RESET_COUNTER) {
@@ -185,7 +181,7 @@ void	LoopButton(SystemConfig *s) {
 	if (r != s->bootsel) {	
 		s->bootsel = r;
 		if (r) {
-			s->bootsel_start = s->unow;
+			s->bootsel_start = s->usNow;
 		} else {
 			#ifndef	WIFI
 				gpio_put(PICO_DEFAULT_LED_PIN, 0 ^ PICO_DEFAULT_LED_PIN_INVERTED);
@@ -288,24 +284,145 @@ char	**split_str(char *s, int *idx) {
 	r[*idx] = NULL;
 	return r;
 }
+#define	MAX_INPUT_LINE	256
+char		inputline[MAX_INPUT_LINE] = "";
+int		inputlp = 0;
+uint32_t	input_state = 0;
+uint32_t	uchar = 0;
+
+void	ProcessChar(uint8_t c) {
+	int	changed = 0;
+	switch (input_state) {
+	case 0:
+		switch (c) {
+			case 27:
+				uchar = c << 16;
+				input_state = 1;
+				break;
+			case 8:
+				if (inputlp) {
+					inputlp--;
+					for (int i = inputlp; (i < MAX_INPUT_LINE - 1) && inputline[i]; i++) {
+						inputline[i] = inputline[i + 1];
+						changed++;
+					}
+				}
+				break;
+			case 10:
+				break;
+			case 13: {
+					int	linec;
+					if ((linec = strlen(inputline))) {
+						if (sys.cb) {
+							char	**p;
+							int	cnt;
+							p = split_str(inputline, &cnt);
+							(sys.cb)(CMD_UART_DATA, inputline, (char *) linec, (char *) p, (char *) cnt);
+						}
+					} 
+				}
+			case 1:
+				bzero(inputline, MAX_INPUT_LINE);
+				inputlp = 0;
+				changed = 1;
+			
+				break;
+			default:
+				if (c >= 127) {
+					uchar = c << 8;
+					input_state = 2;
+				} else {
+					for (int i = MAX_INPUT_LINE - 1; i > inputlp; i--) {
+						inputline[i] = inputline[i - 1];
+						changed++;
+					}
+					inputline[inputlp] = c;
+
+					if (inputlp < MAX_INPUT_LINE)
+						inputlp++;
+					changed++;
+				}
+					
+		}
+		break;
+	case 1:
+		uchar |= (c << 8);
+		input_state = 2;
+		break;
+	case 2:
+		uchar |= c;
+		input_state = 0; 
+		/*SaveCursor();
+		GotoCursor(1, 1);
+		printf("\033[7;32;41m%06X", uchar);
+		RestoreCursor();
+		*/
+		switch (uchar) {
+		case 0x1B5B44:
+			if (inputlp) {
+				inputlp--;
+				changed++;
+			}
+			break;
+		case 0x1B5B43:
+			if (inputlp >= MAX_INPUT_LINE - 2)
+				break;
+			if (inputline[inputlp + 1]) {
+				inputlp++;
+				changed++;
+			}
+			break;
+		}
+		uchar = 0;
+		break;
+	}
+	if (!changed)
+		return;
+	SaveCursor();
+	HideCursor();
+	GotoCursor(1, 1);
+	printf("\033[1;37;42m");
+	for (int i = 0; i < inputlp; i++)
+		printf("%c", inputline[i]);
+	printf("\033[1;37;41m");
+	if (inputline[inputlp]) {
+		printf("%c", inputline[inputlp]);	
+	} else {
+		printf(" ");
+	}
+	printf("\033[0;37;42m");
+	printf("\033[1;37;42m");
+	for (int i = inputlp + 1; i < MAX_INPUT_LINE && inputline[i]; i++)
+		printf("%c", inputline[i]);
+	printf("\033[K");
+	RestoreCursor();
+}
 void	input_loop(void) {
 	int		c;
-	while ((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT) {		
-		if (!sys.usb_ack) {
-		//	printf("\r\n\033[2J%s > ", sys.id);
-			if (sys.cb)
-				(*sys.cb)(CMD_USB_CONNECTED, NULL, NULL, NULL, NULL);
-			sys.usb_ack = 1;
-			//Esc[2J printf("\r\n\x1B[2J");
-			
-		}
-		sys.usb_connected = sys.unow;
+	while ((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT) {	
+		ProcessChar(c);	
 		if (c == 10) {
 			continue;
 		}
 		
-		if (config.echo)
-			putchar(c);
+		/*
+		switch (c) {
+		case 9: {
+			if (!lp)
+				break;
+			lp--;
+			for (int i = lp; i < sizeof(line) - 1; i++)
+				line[i] = line[i + 1];
+		}
+		break;
+		default:
+			line[lp] = c;
+			if (lp < sizeof(line) - 1)
+				lp++;
+		}*/
+		//if (config.echo)
+		//	putchar(c);
+		/*
 		if (c == 13) {
 			line[linec] = 0;
 			if (linec) {
@@ -321,24 +438,15 @@ void	input_loop(void) {
 		} else {
 			line[linec] = c & 0xFF;
 			linec += linec < 511 ? 1 : 0;
-		}
+		}*/
 	} 
-	if (c == PICO_ERROR_TIMEOUT)
-		if (sys.usb_connected) {
-			if ((sys.unow - sys.usb_connected) > 10000000) {
-				sys.usb_connected = 0;
-				sys.usb_ack = 0;
-				if (sys.cb)
-					(*sys.cb)(CMD_USB_DISCONNECTED, NULL, NULL, NULL, NULL);
-			}
-		}
 }
 
 #endif
 
 void	loopSys(SystemConfig *s) {
-	s->unow = time_us_64();
-	s->seconds = (s->unow - s->ustart) / 1000000;
+	s->usNow = time_us_64();
+	s->seconds = (s->usNow - s->usStartTime) / 1000000;
 	/*
 	adc_select_input(4);
 	uint16_t raw = adc_read();
@@ -357,7 +465,7 @@ void	loopSys(SystemConfig *s) {
 
 #ifdef	WIFI
 	//if (s->seconds > )
-		LoopWifi();
+//		LoopWifi();
 #endif
 	if (sys.saveconfig) {
 		SaveConfig(&config);
@@ -388,4 +496,19 @@ void	init_version(void) {
 	};
 	sprintf(completeVersion, "%d.%d-%s", VERSION_MAJOR, VERSION_MINOR, TIMESTAMP);
 	//strcpy(completeVersion, (char *) version);
+}
+
+void	SaveCursor(void) {
+	printf("\0337");
+}
+
+void	RestoreCursor(void) {
+	printf("\0338");
+}
+
+void	GotoCursor(int x, int y) {
+	printf("\033[%d;%df", y, x);
+}
+void	HideCursor(void) {
+	printf("\033[?25l");
 }

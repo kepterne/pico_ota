@@ -12,9 +12,9 @@
 #include	"lcd_display.h"
 #include	"wifi.h"
 #include	"md5.h"
+#include	"hardware/adc.h"
 
-
-#include "pico/cyw43_arch.h"
+#include	"pico/cyw43_arch.h"
 
 int	anok = 2;
 
@@ -62,8 +62,8 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			time_t	ts = 0;
 			sscanf(p3, "%lu", &ts);
 			ts += 3 * 3600;	// TURKISH TZ FIX
-			sys.tbase = ts;
-			sys.tstart = sys.seconds;
+			sys.sBaseTime = ts;
+			sys.sStartTime = sys.seconds;
 			struct tm	*t;
 			t = localtime(&ts);
 			printf("@ TIME SYNCED: %04d %02d %02d - %02d %02d %02d\r\n",
@@ -77,7 +77,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 		} else if (strcasecmp(p2, "unow") == 0) {
 			uint32_t	ts;
 			sscanf(p3, "%lu", &ts);
-			sys.toff = ts / 1000;
+			sys.usOffset = ts / 1000;
 			struct tm	*t;
 			ts = getTime();
 			t = localtime((time_t *) &ts);
@@ -191,6 +191,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			printf("\r\nECHO: %s\r\n", config.echo ? "ON" : "OFF");
 		} else if (strcmp(p[0], "CLR") == 0) {
 			printf("\r\n\x1B[2J");
+			GotoCursor(1, 2);
 		} else if (strcmp(p[0], "ID") == 0) {
 			printf("\r\nID: %s v:%s f:%p size:%u, %u c:%llu FS:%u\r\n", sys.id, sys.version, flash_start, sys.size, sys.size/FLASH_PAGE_SIZE, config.runcount, sys.flashsize/FLASH_PAGE_SIZE);
 		} else if (strcmp(p[0], "RESET") == 0) {
@@ -217,78 +218,20 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 	break;
 	case CMD_PROGRAM_INIT: {
 			printf("PROGRAM INIT\r\n");
-			sys.usb_ack = 0;
+			GotoCursor(1, 2);
 		}
-	break;
-	case CMD_USB_CONNECTED: {
-			printf("\r\nCONNECTED\r\n");
-		}
-	break;
-	case CMD_USB_DISCONNECTED: 
-			printf("\r\nDISCONNECTED\r\n");
 	break;
 	}
 }
 
-
-#include	"hardware/adc.h"
-
 int	main(void) {
-	uint64_t	last = 0;
-	int		seconds = 0;
+	uint64_t	secs = 0;
 	initSys(&sys, System);
-	if (config.lcdon) {
-		lcd_init();
-	}
 	for ( ; ; ) {
 		loopSys(&sys);
-		{
-			if (config.analogon) {
-				analog_on();
-			}
-			if (__analog_inuse) {
-				int	a = reading16[ADC_2];
-				float v = reading16[ADC_1];
-				float	vcc = 3 * reading16[ADC_VCC] * 3.3 / 4095.0;
-
-				v = 3.3 * v / (4096.0);
-				v = ABSDIFF(v, 2.5);
-				v /= 2.5;
-				v *= 30.0;
-				//float aT = NTCTemp(a, 10, 25, 100, 3950);
-				float aT = NTCTemp(a, 10, 25, 10, 3950);
-				static float t[5] = {0, 0, 0, 0, 0};
-				const float conversionFactor = 3.3f / (1 << 12);
-
-				float adc = (float)reading16[ADC_TEMP] * conversionFactor;
-				float tempC = 27.0f - (adc - 0.706f) / 0.001721f;
-
-
-				//if (a || reading16[3])
-				if (sys.unow - last > 250000)
-				if (samples > 100000)
-				//if (sys.seconds != seconds)
-				if (ABSDIFF(t[0], aT) >= 0.1 
-				|| ABSDIFF(t[1], tempC) >= 0.1
-				|| ABSDIFF(t[2], v) >= 0.1
-				|| ABSDIFF(t[3], vcc) >= 0.1
-				) {
-					t[0] = aT;
-					t[1] = tempC;
-					t[2] = v;
-					t[3] = vcc;
-					last = sys.unow;
-					seconds = sys.seconds;
-
-					//printf("\r\nT: %5.1f\r\n", aT);
-					if (config.lcdon) {
-						char	st[32];
-						sprintf(st, "%3.1f %3.1f %3.1fA %4.1fV", aT, tempC, v, vcc);
-						lcd_set_cursor(0, 0);
-						lcd_string(st);
-					}
-				}
-			}
+		if (secs != sys.seconds) {
+			secs = sys.seconds;
+			
 		}
 	}
 }
