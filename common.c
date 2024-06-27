@@ -109,7 +109,7 @@ void	initSys(SystemConfig *s, void (*f)(uint32_t, char *, char *, char *, char *
 	char	*pp;
 	
 	stdio_usb_init();
-	
+	ClearPrompt();
 	s->usStartTime = time_us_64();
 	s->cb = f;
 	s->bootsel = 0;
@@ -290,6 +290,40 @@ int		inputlp = 0;
 uint32_t	input_state = 0;
 uint32_t	uchar = 0;
 
+void	ClearPrompt(void) {
+	bzero(inputline, MAX_INPUT_LINE);
+	inputlp = 0;
+	printf("\r\n\x1B[2J");
+	GotoCursor(1, 3);
+	DrawPrompt();
+}
+void	DrawPrompt(void) {
+	SaveCursor();
+	HideCursor();
+	GotoCursor(1, 1);
+
+	printf("\033[0;30;42mCMD> ");
+	printf("\033[1;37;42m");
+	for (int i = 0; i < inputlp; i++)
+		printf("%c", inputline[i]);
+	printf("\033[1;37;41m");
+	if (inputline[inputlp]) {
+		printf("%c", inputline[inputlp]);	
+	} else {
+		printf(" ");
+	}
+	printf("\033[0;37;42m");
+	printf("\033[1;37;42m");
+	for (int i = inputlp + 1; i < MAX_INPUT_LINE && inputline[i]; i++)
+		printf("%c", inputline[i]);
+	printf("\033[K");
+	
+	GotoCursor(1, 2);
+	printf("\033[0;37;44m");
+	printf("[%s] %4u WiFi:%12X", sys.version, (uint32_t) sys.seconds, sys.wifi_status);
+	printf("\033[K");
+	RestoreCursor();
+}
 void	ProcessChar(uint8_t c) {
 	int	changed = 0;
 	switch (input_state) {
@@ -378,24 +412,7 @@ void	ProcessChar(uint8_t c) {
 	}
 	if (!changed)
 		return;
-	SaveCursor();
-	HideCursor();
-	GotoCursor(1, 1);
-	printf("\033[1;37;42m");
-	for (int i = 0; i < inputlp; i++)
-		printf("%c", inputline[i]);
-	printf("\033[1;37;41m");
-	if (inputline[inputlp]) {
-		printf("%c", inputline[inputlp]);	
-	} else {
-		printf(" ");
-	}
-	printf("\033[0;37;42m");
-	printf("\033[1;37;42m");
-	for (int i = inputlp + 1; i < MAX_INPUT_LINE && inputline[i]; i++)
-		printf("%c", inputline[i]);
-	printf("\033[K");
-	RestoreCursor();
+	DrawPrompt();
 }
 void	input_loop(void) {
 	int		c;
@@ -468,7 +485,7 @@ void	loopSys(SystemConfig *s) {
 //		LoopWifi();
 #endif
 	if (sys.saveconfig) {
-		SaveConfig(&config);
+		UpdateConfig(&config);
 		sys.saveconfig = 0;
 		printf("\r\nCONFIG SAVED\r\n");
 	}

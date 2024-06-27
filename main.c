@@ -169,31 +169,16 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			int	i = analog_toggle();
 			printf("ANALOG READER IS %s\r\n", i ? "ON" : "OFF");
 			config.analogon = i;
-			SaveConfig(&config);
+			sys.saveconfig = 1;
 		} else if (strcmp(p[0], "LCD") == 0) {
 			config.lcdon = lcd_toggle();
-			SaveConfig(&config);
+			sys.saveconfig = 1;
 			printf("LCD IS %s\r\n", config.lcdon  ? "ON" : "OFF");		
-		} else if (strcmp(p[0], "ECHO") == 0) {
-			if (segs > 1) {
-				int	j = -1;
-				if (strcmp(p[1], "ON") == 0) 
-					j = 1;
-				else if (strcmp(p[1], "OFF") == 0)
-					j = 0;
-				if (j >= 0) {
-					if (config.echo != j) {
-						config.echo = j;
-						SaveConfig(&config);
-					};
-				}
-			}
-			printf("\r\nECHO: %s\r\n", config.echo ? "ON" : "OFF");
 		} else if (strcmp(p[0], "CLR") == 0) {
 			printf("\r\n\x1B[2J");
-			GotoCursor(1, 2);
+			ClearPrompt();
 		} else if (strcmp(p[0], "ID") == 0) {
-			printf("\r\nID: %s v:%s f:%p size:%u, %u c:%llu FS:%u\r\n", sys.id, sys.version, flash_start, sys.size, sys.size/FLASH_PAGE_SIZE, config.runcount, sys.flashsize/FLASH_PAGE_SIZE);
+			printf("ID: %s\r\n\tVersion:%s\r\n\tf:%p\r\n\tsize:%u, %u\r\n\tc:%llu\r\n\tFS:%u\r\n", sys.id, sys.version, flash_start, sys.size, sys.size/FLASH_PAGE_SIZE, config.runcount, sys.flashsize/FLASH_PAGE_SIZE);
 		} else if (strcmp(p[0], "RESET") == 0) {
 			resetPico();
 		} else if (strcmp(p[0], "USB") == 0) {
@@ -217,8 +202,11 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			printf("CONFIG STORED\r\n");
 	break;
 	case CMD_PROGRAM_INIT: {
-			printf("PROGRAM INIT\r\n");
+			ClearPrompt();
+			DrawPrompt();
 			GotoCursor(1, 2);
+			
+			printf("\r\nPROGRAM INIT\r\n");
 		}
 	break;
 	}
@@ -229,9 +217,10 @@ int	main(void) {
 	initSys(&sys, System);
 	for ( ; ; ) {
 		loopSys(&sys);
+		loop_wifi();
 		if (secs != sys.seconds) {
 			secs = sys.seconds;
-			
-		}
+			DrawPrompt();
+		}	
 	}
 }

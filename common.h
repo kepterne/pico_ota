@@ -37,6 +37,9 @@ typedef	struct {
 	void		(*cb)(uint32_t, char *, char *, char *, char *);
 	uint64_t	last_read;
 	int		saveconfig;
+	uint32_t	wifi_status;
+	char		access_point[128];
+	char		access_point_pw[128];
 } SystemConfig;
 
 uint64_t	get64(char *p);
@@ -65,4 +68,6 @@ void	SaveCursor(void);
 void	RestoreCursor(void);
 void	GotoCursor(int x, int y);
 void	HideCursor(void);
+void	DrawPrompt(void);
+void	ClearPrompt(void);
 #endif

@@ -35,4 +35,5 @@ extern	int				current_ap;
 
 void	LoopWifi(void);
 
+void	loop_wifi(void);
 #endif

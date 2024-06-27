@@ -15,26 +15,85 @@ int		wifi_state = 0;
 
 int	rssi_list[32];
 
+#define		MAX_APS	32
+typedef	struct {
+	int		use;
+	char		ssid[32];
+	uint8_t	bssid[6];
+	int		rssi;
+	int		auth_mode;
+	int		channel;
+} ap_entry;
+
+ap_entry	ap_list[MAX_APS];
+
 
 void	init_scan(void) {
 	for (int i = 0; i < 32; i++)
 		rssi_list[i] = 0;
+	for (int i = 0; i < MAX_APS; i++)
+		ap_list[i].use = 0;
+}
+
+int	find_ap(const cyw43_ev_scan_result_t *r) {
+	ap_entry 	*e;
+	int	newp = -1;
+	for (int i = 0; i < MAX_APS; i++) {
+		if (!ap_list[i].use) {
+			if (newp < 0)
+				newp = i;
+		}
+		if (strcmp(r->ssid, ap_list[i].ssid))
+			continue;
+		
+		if (memcmp(r->bssid, ap_list[i].bssid, 6))
+			continue;
+		newp = i;
+		break;
+	}
+	if (newp < 0)
+		return 0;
+	e = ap_list + newp;
+	if (!e->use) {
+		memcpy(e->bssid, r->bssid, 6);
+		strcpy(e->ssid, r->ssid);
+		e->use = 1;
+	}
+	e->auth_mode = r->auth_mode;
+	e->channel = r->channel;
+	e->rssi = r->rssi;
+	for (int i = 0; i < MAX_APS - 1; i++) {
+		ap_entry	ae;
+		if (!ap_list[i].use)
+			continue;
+		for (int j = i + 1; j < MAX_APS; j++) {
+			if (!ap_list[j].use)
+				continue;
+			if (ap_list[j].rssi > ap_list[i].rssi) {
+				memcpy(&ae, ap_list + i, sizeof(ap_entry));
+				memcpy(ap_list + i, ap_list + j, sizeof(ap_entry));
+				memcpy(ap_list + j, &ae, sizeof(ap_entry));
+			}
+		}
+	}
+	return 1;
 }
 
 static int scan_result(void *env, const cyw43_ev_scan_result_t *result) {
-    if (result) {
-		for (int i = 0; i < 4; i++) {
+	if (result) {
+/*		for (int i = 0; i < 4; i++) {
 			if (strcmp(config.aps[i][0], result->ssid))
 				continue;
 			rssi_list[i] = result->rssi;
 		}
-        printf("%-32s rssi: %4d chan: %3d mac: %02x:%02x:%02x:%02x:%02x:%02x sec: %u\n",
+		printf("%-32s rssi: %4d chan: %3d mac: %02x:%02x:%02x:%02x:%02x:%02x sec: %u\n",
 		    result->ssid, result->rssi, result->channel,
             result->bssid[0], result->bssid[1], result->bssid[2], result->bssid[3], result->bssid[4], result->bssid[5],
             result->auth_mode);
-
-    }
-    return 0;
+*/
+		find_ap(result);
+	}
+	return 0;
 }
 int	apc = 0;
 
@@ -107,7 +166,6 @@ void	LoopWifi(void) {
 					break;
 				}
 			}
-
 		}
 		if (wifi_state == ST_WIFI_SCAN || wifi_state == ST_WIFI_SCANNING)
 			break;
@@ -332,4 +390,93 @@ static bool tcp_client_open(void *arg) {
     cyw43_arch_lwip_end();
 
     return err == ERR_OK;
+}
+
+#define	WIFIS_INITIALIZE	0
+#define	WIFIS_START_SCAN	1
+#define	WIFIS_SCANNING	2
+#define	WIFIS_CONNECT	3
+#define	WIFIS_CONNECTING	4
+
+#define	WIFIS_FAILED		0x10000000
+void	loop_wifi(void) {
+	if (sys.seconds < 1)
+		return;
+	switch (sys.wifi_status) {
+	case WIFIS_INITIALIZE:
+		printf("Initializing wifi...\r\n");
+		if (cyw43_arch_init()) {
+			printf("failed to initialise\n");
+			sys.wifi_status = WIFIS_FAILED;
+			break;
+		}
+		printf("Entering station mode... %d \r\n", sys.wifi_status);
+		cyw43_arch_enable_sta_mode();
+		sys.wifi_status = WIFIS_START_SCAN;
+		printf("Initialized wifi... %d \r\n", sys.wifi_status);
+		break;
+	case WIFIS_START_SCAN: {
+			int err;
+			cyw43_wifi_scan_options_t scan_options = {0};
+			printf("WiFi Scanning\r\n");
+			init_scan();
+			err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_result);
+			if (err) {
+				printf("Failed to start scan: %d\n", err);
+				sys.wifi_status = WIFIS_FAILED;
+			} else {
+				printf("WiFi Scan Started\r\n");
+				sys.wifi_status = WIFIS_SCANNING;
+			}
+
+		}
+		break;
+	case WIFIS_SCANNING:
+		if (!cyw43_wifi_scan_active(&cyw43_state)) {
+			int	connect = 1;
+			//ClearPrompt();
+			printf("\033[2J");
+			DrawPrompt();
+			GotoCursor(1, 3);
+			printf("Scan done\r\n");
+			
+			for (int i = 0; i < MAX_APS; i++) {
+				ap_entry	*result = ap_list + i;
+				if (!ap_list[i].use)
+					continue;
+				printf("%-32s rssi: %4d chan: %3d mac: %02x:%02x:%02x:%02x:%02x:%02x sec: %u\n",
+				result->ssid, result->rssi, result->channel,
+				result->bssid[0], result->bssid[1], result->bssid[2], result->bssid[3], result->bssid[4], result->bssid[5],
+				result->auth_mode);
+				for (int j = 0; j < 4; j++) {
+					if (strcasecmp(config.aps[j][0], result->ssid))
+						continue;
+					if (!sys.access_point[0]) {
+						strcpy(sys.access_point, result->ssid);
+						strcpy(sys.access_point_pw, config.aps[j][1]);
+						connect = 1;
+					}
+				}
+			}
+			if (connect) {
+				sys.wifi_status = WIFIS_CONNECT;
+			} else
+				sys.wifi_status = WIFIS_START_SCAN;
+			printf("scan done\n");
+		
+		}
+		break;
+	case WIFIS_CONNECT: {
+			if (sys.cb)
+				(*sys.cb)(CMD_WIFI_CONNECTING, sys.access_point, NULL, NULL, NULL);
+			cyw43_arch_wifi_connect_async(sys.access_point,  sys.access_point_pw, CYW43_AUTH_WPA2_MIXED_PSK);
+			sys.wifi_status = WIFIS_CONNECTING;
+			printf("CONNECTING TO : %s\r\n", sys.access_point);
+		}
+		break;
+	
+	case WIFIS_FAILED:
+		break;
+	}
+	sleep_ms(1);
 }
