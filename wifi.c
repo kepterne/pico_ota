@@ -397,6 +397,7 @@ static bool tcp_client_open(void *arg) {
 #define	WIFIS_SCANNING	2
 #define	WIFIS_CONNECT	3
 #define	WIFIS_CONNECTING	4
+#define	WIFIS_CONNECTED	5
 
 #define	WIFIS_FAILED		0x10000000
 void	loop_wifi(void) {
@@ -472,9 +473,36 @@ void	loop_wifi(void) {
 			cyw43_arch_wifi_connect_async(sys.access_point,  sys.access_point_pw, CYW43_AUTH_WPA2_MIXED_PSK);
 			sys.wifi_status = WIFIS_CONNECTING;
 			printf("CONNECTING TO : %s\r\n", sys.access_point);
+			sys.wifi_timeout = sys.seconds + 5;
 		}
 		break;
-	
+	case WIFIS_CONNECTING: {
+			int	err;
+			switch ((err = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA))) {
+			case CYW43_LINK_UP:
+				sys.wifi_status = WIFIS_CONNECTED;;
+				uint8_t	*adr = (char *) &cyw43_state.netif->ip_addr.addr;
+				char	ipadr[32], gwaddr[32];
+				sprintf(ipadr, "%d.%d.%d.%d", adr[0], adr[1], adr[2], adr[3]);
+				adr = (char *) &cyw43_state.netif->gw.addr;
+				sprintf(gwaddr, "%d.%d.%d.%d", adr[0], adr[1], adr[2], adr[3]);
+				if (sys.cb)
+					(*sys.cb)(CMD_WIFI_CONNECTED, config.aps[current_ap][0], ipadr, NULL, NULL);
+			
+				printf("connected to %s %s %s\r\n", config.aps[current_ap][0], ipadr, gwaddr);
+				break;
+			default:
+				if (sys.wifi_timeout <= sys.seconds || err <= 0) {
+					cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
+					printf("WIFI FAILED %d %d\r\n", err, sys.wifi_timeout - sys.seconds);
+					
+					sys.wifi_status = WIFIS_START_SCAN;
+				}
+			}
+		}
+		break;
+	case WIFIS_CONNECTED:
+
 	case WIFIS_FAILED:
 		break;
 	}

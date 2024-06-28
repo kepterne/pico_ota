@@ -38,6 +38,7 @@ typedef	struct {
 	uint64_t	last_read;
 	int		saveconfig;
 	uint32_t	wifi_status;
+	uint64_t	wifi_timeout;
 	char		access_point[128];
 	char		access_point_pw[128];
 } SystemConfig;
