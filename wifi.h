@@ -35,5 +35,20 @@ extern	int				current_ap;
 
 void	LoopWifi(void);
 
+
+
+#define	MAX_TCP_LINE	256
+
+typedef struct TCP_C_ {
+    	ip_addr_t		addr;
+    	bool			state;
+	char			hostname[128];
+	int			port;
+	struct tcp_pcb	*tcp_pcb;
+	uint8_t		line[MAX_TCP_LINE];
+	uint32_t		linepos;
+} TCP_C;
+
+int	connect_to_tcp(TCP_C *tc, char *hostname, int port);
 void	loop_wifi(void);
 #endif

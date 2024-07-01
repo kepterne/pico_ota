@@ -43,6 +43,8 @@ void	ProcessFields(TCP_CLIENT_T *tc, char *p) {
 	}
 }
 
+TCP_C	ServerConnection;
+
 void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 	switch (cmd) {
 	case CMD_PARAM: {
@@ -139,7 +141,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 	}
 	break;
 	case CMD_WIFI_CONNECTING: {
-		printf("Connecting to : \"%s\"\r\n", p1);
+		printf("Connecting to : \"%s\" : \"%s\"\r\n", p1, p2);
 		if (config.lcdon) {
 			lcd_set_cursor(2, 0);
 			lcd_string(p1);
@@ -148,12 +150,13 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 	break;
 
 	case CMD_WIFI_CONNECTED: {
-		printf("Connected to : \"%s\" ip: %s\r\n", p1, p2);
+		printf("Connected to : \"%s\" ip: %s, gw: %s\r\n", p1, p2, p3);
 		sys.last_read = sys.seconds;
 		if (config.lcdon) {
 			lcd_set_cursor(3, 0);
 			lcd_string(p2);
 		}
+		connect_to_tcp(&ServerConnection, config.hostadr, config.hostport);
 	}
 	break;
 
@@ -161,6 +164,26 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 		printf("Disconnected from : \"%s\"\r\n", p1);
 	}
 	break;
+
+	case CMD_TCP_NOT_RESOLVING: {
+		TCP_C	*tc = (TCP_C *) p1;
+		printf("NOT Resolved : \"%s\"\r\n", tc->hostname);
+	}
+	case CMD_TCP_RESOLVED: {
+		TCP_C	*tc = (TCP_C *) p1;
+		uint8_t	*p = (uint8_t *) &tc->addr;
+		printf("Resolved : \"%s\" -> %d.%d.%d.%d\r\n", tc->hostname,
+			p[0], p[1], p[2], p[3]
+		);
+		
+	}
+	break;
+	case CMD_TCP_NOT_RESOLVED: {
+		TCP_C	*tc = (TCP_C *) p1;
+		printf("NOT Resolved : \"%s\"\r\n", tc->hostname);
+	}
+	break;
+	
 	case CMD_UART_DATA: {
 		int		idx, val;
 		int		segs = (int) p4;

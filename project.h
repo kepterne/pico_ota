@@ -56,6 +56,7 @@ typedef	union {
 			1,						// echo on
 			1,						// lcd on
 			"173.255.229.145",
+			//"www.google.com",
 			//"192.168.1.24",
 			8899,
 			{

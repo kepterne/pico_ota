@@ -28,7 +28,8 @@
 	"gpio.h": "c",
 	"ioqspi.h": "c",
 	"math.h": "c",
-	"analog_reader.h": "c"
+	"analog_reader.h": "c",
+	"lcd_display.h": "c"
 },
     "cmake.environment": {
         "PICO_SDK_PATH":"~/pico/pico-sdk"
