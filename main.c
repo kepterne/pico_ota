@@ -18,7 +18,7 @@
 
 int	anok = 2;
 
-void	ProcessFields(TCP_CLIENT_T *tc, char *p) {
+void	ProcessFields(TCP_C *tc, char *p) {
 	if (*p != '~')
 		return;
 	char	*name;
@@ -95,7 +95,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 	}
 	break;
 	case CMD_TCP_DATA: {
-		TCP_CLIENT_T	*tc = (TCP_CLIENT_T *) p1;
+		TCP_C	*tc = (TCP_C *) p1;
 		int		l = (int) p3;
 		char	*p = p2;
 		sys.last_read = sys.seconds;
@@ -141,7 +141,11 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 	}
 	break;
 	case CMD_WIFI_CONNECTING: {
-		printf("Connecting to : \"%s\" : \"%s\"\r\n", p1, p2);
+		uint8_t	*pp = (uint8_t *) p3;
+		printf("Connecting to : \"%s\" | %02x:%02x:%02x:%02x:%02x:%02x : \"%s\"\r\n", p1,
+		pp[0], pp[1], pp[2], pp[3], pp[4], pp[5],
+		p2
+		);
 		if (config.lcdon) {
 			lcd_set_cursor(2, 0);
 			lcd_string(p1);
@@ -159,9 +163,16 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 		connect_to_tcp(&ServerConnection, config.hostadr, config.hostport);
 	}
 	break;
+	case CMD_WIFI_TICK: {
+		printf("W TICK %04X\r\n", ServerConnection.state);
+		if (ServerConnection.state == TCPS_DISCONNECTED)
+			connect_to_tcp(&ServerConnection, config.hostadr, config.hostport);
 
+	}
+	break;
 	case CMD_WIFI_DISCONNECTED: {
 		printf("Disconnected from : \"%s\"\r\n", p1);
+
 	}
 	break;
 
@@ -181,6 +192,16 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 	case CMD_TCP_NOT_RESOLVED: {
 		TCP_C	*tc = (TCP_C *) p1;
 		printf("NOT Resolved : \"%s\"\r\n", tc->hostname);
+	}
+	break;
+	case CMD_TCP_CONNECTED: {
+		TCP_C	*tc = (TCP_C *) p1;
+		printf("Connected : \"%s\":%d\r\n", tc->hostname, tc->port);
+	}
+	break;
+	case CMD_TCP_DISCONNECTED: {
+		TCP_C	*tc = (TCP_C *) p1;
+		printf("Disconnected : \"%s\":%d\r\n", tc->hostname, tc->port);
 	}
 	break;
 	

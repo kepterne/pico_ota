@@ -32,7 +32,7 @@ typedef	struct {
 	int			analogon;
 	char			hostadr[32];
 	int			hostport;
-	char			aps[4][2][32];
+	uint8_t			aps[4][3][32];
 	uint64_t		runcount;
 	int			doupdate;
 	int			newSize;
@@ -60,19 +60,31 @@ typedef	union {
 			//"192.168.1.24",
 			8899,
 			{
-				
 				{
+					{0x40, 0x24, 0xb2, 0xbd, 0x6c, 0xcb},
+					"",
+					"movita568d"
+				},
+				/*
+				{	
+					{0x30,0xcc,0x21,0x3e,0x2c,0x30},
+					"",
+					"1qazoFa1s4B"
+				},*/
+				{
+					"",
 					"sparky",
 					"23646336"
 				},
 				{
-					"EIP\xe2\x98\x8e\xef\xb8\x8f", "e0gvbm6pr30k3"
+					"",
+					"EIP\xe2\x98\x8e\xef\xb8\x8f", 
+					"e0gvbm6pr30k3"
 				},
-				{	
-					"alphagolf-2.4",
-					"1qazoFa1s4B"
-				},
+				
+				
 				{
+					"",
 					"",
 					""
 				}

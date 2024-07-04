@@ -13,6 +13,7 @@
 
 #define	CMD_WIFI_CONNECTING	0x0070
 #define	CMD_WIFI_CONNECTED	0x0080
+#define	CMD_WIFI_TICK		0x0090
 #define	CMD_WIFI_DISCONNECTED	0x00A0
 
 #define	CMD_TCP_NOT_RESOLVING	0x0100
@@ -47,6 +48,7 @@ typedef	struct {
 	uint32_t	wifi_status;
 	uint64_t	wifi_timeout;
 	char		access_point[128];
+	uint8_t	bssid[6];
 	char		access_point_pw[128];
 } SystemConfig;
 
