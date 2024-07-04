@@ -139,8 +139,9 @@ void	initSys(SystemConfig *s, void (*f)(uint32_t, char *, char *, char *, char *
 	
 	uint			sz;
 	sz = sizeof(config);
-	if (sz % FLASH_PAGE_SIZE)
-		sz = sz + FLASH_PAGE_SIZE - (sz % FLASH_PAGE_SIZE);
+	if (sz % FLASH_SECTOR_SIZE)
+		sz = sz + FLASH_SECTOR_SIZE - (sz % FLASH_SECTOR_SIZE);
+	
 	new_flash_addr = flash_addr + sz;
 	if (strcmp(sc->magic, config.magic))
 		SaveConfig(&config);

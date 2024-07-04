@@ -195,7 +195,24 @@ static err_t tcpc_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
 	_inside = 0;
 	return ERR_OK;
 }
-
+err_t	tcpc_send(TCP_C *state, char *data, int len) {
+	err_t	err;
+	if (!state)
+		return ERR_ISCONN;
+	if (!state->tcp_pcb)
+		return ERR_MEM;
+	
+	printf("Writing %d bytes to server\n", state->buffer_len);
+	err = tcp_write(state->tcp_pcb, data, len, TCP_WRITE_FLAG_COPY);
+	if (err != ERR_OK) {
+		printf("Failed to write data %d\n", err);
+		err = tcpc_result(state, -1);
+		
+		return err;
+	} 
+	
+	return ERR_OK;
+}
 err_t tcpc_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
 	TCP_C *state = (TCP_C *) arg;
 	err_t r;
@@ -220,16 +237,16 @@ err_t tcpc_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
 					if (state->linepos) {
 						if (sys.cb) {
 							(*sys.cb)(CMD_TCP_DATA, (char *) state, state->line, (char *) state->linepos, NULL);
-							if (state->senddata[0]) {
+						/*	if (state->senddata[0]) {
 								printf("Writing %d bytes to server\n", state->buffer_len);
 								err_t err = tcp_write(tpcb, state->senddata, strlen(state->senddata), TCP_WRITE_FLAG_COPY);
 								if (err != ERR_OK) {
-								printf("Failed to write data %d\n", err);
-								return tcpc_result(arg, -1);
+									printf("Failed to write data %d\n", err);
+									return tcpc_result(arg, -1);
 								}
 								state->senddata[0] = 0;
 							}   
-				
+						*/
 						}
 					}
 					state->line[state->linepos = 0] = 0;

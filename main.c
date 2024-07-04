@@ -113,12 +113,14 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 				((uint32_t *) &i)[0] ^= 0x17891789l;
 				((uint32_t *) &i)[1] ^= 0x29091999l;
 				l = sprintf(tc->senddata, "\nPING: %" PRIu64 "\n", i);
+				tcpc_send(tc, tc->senddata, l);
 			}
-			if (config.doupdate) {
+		/*	if (config.doupdate) {
 				printf("\r\nUPDATE IS REQUESTED %d\r\n", l);
-				printf("\nGET %d %d\n", config.newPos, FLASH_PAGE_SIZE);
-				sprintf(tc->senddata + l, "\nGET %d %d\n", config.newPos, FLASH_PAGE_SIZE);
+				printf("\nGET %d %d\n", config.newPos, FLASH_SECTOR_SIZE);
+				sprintf(tc->senddata + l, "\n~psize(%u) poff(%u)~\n", config.newPos, FLASH_SECTOR_SIZE);
 			}
+		*/
 		} else if (strncmp(p, "KIMO ", 5) == 0) {
 			char  challenge[64];
 			uint8_t md5[32];
@@ -129,7 +131,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			md5_digest_string(md5, challenge);
 		//	up(" !------------- CHALLENGE -------------! ");
 		//	upr(challenge);
-			sprintf(tc->senddata, "HELO: %s %s.%s ~name(%s) type(%s) uptime(%llu) id(%s) ver( %s ) wifi(%s)~\n", challenge, sys.id, sys.flashid,
+			int l = sprintf(tc->senddata, "HELO: %s %s.%s ~name(%s) type(%s) uptime(%llu) id(%s) ver( %s ) wifi(%s)~\n", challenge, sys.id, sys.flashid,
 				config.name,
 				"PICO_W",
 				sys.seconds, 
@@ -137,6 +139,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 				sys.version,
 				config.aps[current_ap][0]
 			);
+			tcpc_send(tc, tc->senddata, l);
 		}
 	}
 	break;

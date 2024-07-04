@@ -66,4 +66,5 @@ typedef struct TCP_C_ {
 int	connect_to_tcp(TCP_C *tc, char *hostname, int port);
 void	loop_wifi(void);
 
+err_t	tcpc_send(TCP_C *state, char *data, int len);
 #endif
