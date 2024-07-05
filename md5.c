@@ -271,8 +271,10 @@ void md5_buffer( const uint8_t *buf, int buflen, uint8_t digest[16]) {
     md5_update(&ctx, buf, buflen);
     md5_final(&ctx, digest);
 }
+
 static const char cb64[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-void encodeblock( unsigned char in[3], unsigned char out[4], int len) {
+
+void encodeblock( unsigned char *in, unsigned char *out, int len) {
     out[0] = cb64[ in[0] >> 2 ];
     out[1] = cb64[ ((in[0] & 0x03) << 4) | ((in[1] & 0xf0) >> 4) ];
     out[2] = (unsigned char) (len > 1 ? cb64[ ((in[1] & 0x0f) << 2) | ((in[2] & 0xc0) >> 6) ] : '=');
@@ -284,12 +286,14 @@ void	md5_buffer_b64(const uint8_t *buf, int buflen, char *str) {
 	MD5Context	ctx;
 	int			i = 0; //, j = 0;
 
-    md5_init(&ctx);
-    md5_update(&ctx, buf, buflen);
-    md5_final(&ctx, digest);
+	md5_init(&ctx);
+	md5_update(&ctx, buf, buflen);
+	md5_final(&ctx, digest);
+
 	for (i=0; i<15; i+=3, str+=4) {
 		encodeblock(digest+i, (unsigned char *) str, 3);
 	}
+
 	encodeblock(digest+i, (unsigned char *) str, 1);
 	str++;
 	str++;

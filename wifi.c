@@ -29,7 +29,6 @@ typedef	struct {
 
 ap_entry	ap_list[MAX_APS];
 
-
 int	_inside = 0;
 static err_t tcpc_result(void *arg, int status);
 
@@ -99,21 +98,6 @@ static int scan_result(void *env, const cyw43_ev_scan_result_t *result) {
 	}
 	return 0;
 }
-int	apc = 0;
-
-#define	ST_WIFI_INIT		0
-#define	ST_WIFI_FAILED		1000
-#define	ST_WIFI_SCAN		10
-#define	ST_WIFI_SCANNING	11
-#define	ST_WIFI_CONNECT		12
-#define	ST_WIFI_CONNECTING	13
-#define	ST_WIFI_CONNECTED	14
-
-#define	ST_TCP_CONNECT  	15
-#define ST_TCP_CONNECTING   16
-
-
-
 
 static err_t tcp_client_poll(void *arg, struct tcp_pcb *tpcb) {
     printf("tcp_client_poll\n");
@@ -195,14 +179,16 @@ static err_t tcpc_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
 	_inside = 0;
 	return ERR_OK;
 }
+
 err_t	tcpc_send(TCP_C *state, char *data, int len) {
 	err_t	err;
 	if (!state)
-		return ERR_ISCONN;
+		return 0;
 	if (!state->tcp_pcb)
-		return ERR_MEM;
+		return 0;
 	
-	printf("Writing %d bytes to server\n", state->buffer_len);
+	printf("Writing %d bytes to server\n", len);
+	tcp_nagle_disable(state->tcp_pcb);
 	err = tcp_write(state->tcp_pcb, data, len, TCP_WRITE_FLAG_COPY);
 	if (err != ERR_OK) {
 		printf("Failed to write data %d\n", err);
@@ -210,9 +196,11 @@ err_t	tcpc_send(TCP_C *state, char *data, int len) {
 		
 		return err;
 	} 
-	
+	//while (state->tcp_pcb->unsent)
+	//	if (tcp_output(state->tcp_pcb) != ERR;
 	return ERR_OK;
 }
+
 err_t tcpc_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
 	TCP_C *state = (TCP_C *) arg;
 	err_t r;
@@ -228,25 +216,24 @@ err_t tcpc_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
 	// cyw43_arch_lwip_begin IS needed
 	cyw43_arch_lwip_check();
 	if (p->tot_len > 0) {
-		printf("recv %d err %d\n", p->tot_len, err);
-		for (struct pbuf *q = p; q != NULL; q = q->next) {
+		//printf("recv %d err %d\n", p->tot_len, err);
+		for (struct pbuf *q = p; q; q = q->next) {
 			char    *p = q->payload;
-			for (int i = 0; i < q->len; i++, p++) 
-				if (*p == 13 || *p == 10) {
+			for (int i = 0; i < q->len; i++, p++) {
+				if (state->binary_size) {					
+					state->binary[state->binary_p++] = *p;
+					if (state->binary_p >= state->binary_size) {
+						printf("binary data received %d\r\n", state->binary_size);
+						(*sys.cb)(CMD_TCP_BINARY, (char *) state, state->binary, (char *) state->binary_size, (char *) state->binary_off);
+						state->binary_size = 0;
+						
+					}
+					
+				} else if (*p == 13 || *p == 10) {
 					state->line[state->linepos] = 0;
 					if (state->linepos) {
 						if (sys.cb) {
 							(*sys.cb)(CMD_TCP_DATA, (char *) state, state->line, (char *) state->linepos, NULL);
-						/*	if (state->senddata[0]) {
-								printf("Writing %d bytes to server\n", state->buffer_len);
-								err_t err = tcp_write(tpcb, state->senddata, strlen(state->senddata), TCP_WRITE_FLAG_COPY);
-								if (err != ERR_OK) {
-									printf("Failed to write data %d\n", err);
-									return tcpc_result(arg, -1);
-								}
-								state->senddata[0] = 0;
-							}   
-						*/
 						}
 					}
 					state->line[state->linepos = 0] = 0;
@@ -255,9 +242,8 @@ err_t tcpc_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
 					if (state->linepos < sizeof(state->line) - 1)
 						state->linepos++;
 				}
-
+			}
 		}
-		// Receive the buffer
 		tcp_recved(tpcb, p->tot_len);
 	}
 	pbuf_free(p);
@@ -273,6 +259,7 @@ static void tcpc_err(void *arg, err_t err) {
 	}
 	_inside = 0;
 }
+
 static err_t tcpc_connected(void *arg, struct tcp_pcb *tpcb, err_t err) {
 	TCP_C *state = (TCP_C *)arg;
 	err_t	r;
@@ -283,7 +270,7 @@ static err_t tcpc_connected(void *arg, struct tcp_pcb *tpcb, err_t err) {
 		_inside = 0;
 		return r;
 	}
-	state->state = TCPS_CONNECTING;
+	state->state = TCPS_CONNECTED;
 	//printf("Waiting for buffer from server\n");
 	if (sys.cb) {
 		(*sys.cb)(CMD_TCP_CONNECTED, (char *) state, NULL, NULL, NULL);
@@ -291,7 +278,8 @@ static err_t tcpc_connected(void *arg, struct tcp_pcb *tpcb, err_t err) {
 	_inside = 0;
 	return ERR_OK;
 }
-int	connect_tcp(TCP_C *tc) {
+
+int	tcp_do_connect(TCP_C *tc) {
 	printf("Connecting...\r\n");
 	tc->tcp_pcb = tcp_new_ip_type(IP_GET_TYPE(&tc->addr));
 	if (!tc->tcp_pcb) {
@@ -300,7 +288,8 @@ int	connect_tcp(TCP_C *tc) {
 
 	printf("Connecting...1\r\n");
 	tcp_arg(tc->tcp_pcb, tc);
-	tcp_poll(tc->tcp_pcb, tcpc_poll, POLL_TIME_S * 2);
+	tcp_poll(tc->tcp_pcb, tcpc_poll, POLL_TIME_S);
+	tcp_poll(tc->tcp_pcb, NULL, 0);
 	tcp_sent(tc->tcp_pcb, tcpc_sent);
 	tcp_recv(tc->tcp_pcb, tcpc_recv);
 	tcp_err(tc->tcp_pcb, tcpc_err);
@@ -313,7 +302,7 @@ int	connect_tcp(TCP_C *tc) {
 }
 
 // Call back with a DNS result
-static void tcp_dns_found(const char *hostname, const ip_addr_t *ipaddr, void *arg) {
+static void tcp_dns_callback(const char *hostname, const ip_addr_t *ipaddr, void *arg) {
 	TCP_C *state = (TCP_C *) arg;
 	_inside = 1;
 	if (ipaddr) {
@@ -321,24 +310,21 @@ static void tcp_dns_found(const char *hostname, const ip_addr_t *ipaddr, void *a
 		state->state = TCPS_RESOLVED;
 		if (sys.cb)
 			(*sys.cb)(CMD_TCP_RESOLVED, (char *) state, NULL, NULL, NULL);
-		connect_tcp(state);	
-		//sys.wifi_status = WIFIS_RESOLVED;
-		//printf("ntp address %s\n", ipaddr_ntoa(ipaddr));
-		//ntp_request(state);
-		//connect_tcp(state);
+		tcp_do_connect(state);
 	} else {
 		state->state = TCPS_NOT_RESOLVED;
 		if (sys.cb)
 			(*sys.cb)(CMD_TCP_NOT_RESOLVED, (char *) state, NULL, NULL, NULL);
-		state->state = TCPS_DISCONNECTED;
-		//sys.wifi_status = WIFIS_FAILED;
-		//printf("ntp dns request failed\n");
-		//ntp_result(state, -1, NULL);
-
+		
+		//state->state = TCPS_DISCONNECTED;
+		tcpc_close(state);
 	}
 	_inside = 0;
 }
-int	connect_to_tcp(TCP_C *tc, char *hostname, int port) {
+
+int	connect_to_host(TCP_C *tc, char *hostname, int port) {
+	if (tc->tcp_pcb)
+		return 99;
 	bzero(tc, sizeof(*tc));
 	strcpy(tc->hostname, hostname);
 	tc->port = port;
@@ -348,37 +334,41 @@ int	connect_to_tcp(TCP_C *tc, char *hostname, int port) {
 			(*sys.cb)(CMD_TCP_NOT_RESOLVING, (char *) tc, NULL, NULL, NULL);
 		if (!_inside)
 			cyw43_arch_lwip_begin();
-            int err = dns_gethostbyname(tc->hostname, &tc->addr, tcp_dns_found, tc);
+            int err = dns_gethostbyname(tc->hostname, &tc->addr, tcp_dns_callback, tc);
             if (!_inside)
 			cyw43_arch_lwip_end();
 		
 	} else {
 		if (sys.cb) {
 			(*sys.cb)(CMD_TCP_RESOLVED, (char *) tc, NULL, NULL, NULL);	
-			connect_tcp(tc);
+			tcp_do_connect(tc);
 		}
 	}
 	return 0;
 }
+
 int	connect = 0;
+
 void	loop_wifi(void) {
-	if (sys.seconds < 1)
-		return;
 	switch (sys.wifi_status) {
-	case WIFIS_INITIALIZE:
-		printf("Initializing wifi...\r\n");
-		if (cyw43_arch_init_with_country(CYW43_COUNTRY_TURKEY)) {
-			printf("failed to initialise\n");
-			sys.wifi_status = WIFIS_FAILED;
-			break;
+	case WIFIS_INITIALIZE: {
+			printf("Initializing wifi...\r\n");
+			if (cyw43_arch_init_with_country(PROJECT_WIFI_COUNTRY)) {
+				printf("failed to initialise\n");
+				sys.wifi_status = WIFIS_FAILED;
+				break;
+			}
+			printf("Entering station mode... %d \r\n", sys.wifi_status);
+			cyw43_arch_enable_sta_mode();
+			sys.wifi_status = WIFIS_START_SCAN;
+			printf("Initialized wifi... %d \r\n", sys.wifi_status);
 		}
-		printf("Entering station mode... %d \r\n", sys.wifi_status);
-		cyw43_arch_enable_sta_mode();
-		sys.wifi_status = WIFIS_START_SCAN;
-		printf("Initialized wifi... %d \r\n", sys.wifi_status);
 		break;
+		
 	case WIFIS_START_SCAN: {
 			int err;
+			if (sys.seconds < 1)
+				break;
 			cyw43_wifi_scan_options_t scan_options = {0};
 			printf("WiFi Scanning\r\n");
 			cyw43_arch_enable_sta_mode();
@@ -386,7 +376,6 @@ void	loop_wifi(void) {
 			connect = 0;
 			bzero(&scan_options, sizeof(scan_options));
 			scan_options.scan_type = 1;
-			scan_options.ssid_len = 0;
 			err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_result);
 			if (err) {
 				printf("Failed to start scan: %d\n", err);
@@ -492,7 +481,6 @@ void	loop_wifi(void) {
 				if (sys.cb)
 					(*sys.cb)(CMD_WIFI_CONNECTED, sys.access_point, ipadr, gwaddr, NULL);
 			
-			//	printf("connected to %s %s %s\r\n", config.aps[current_ap][0], ipadr, gwaddr);
 				break;
 			default:
 				if (sys.wifi_timeout <= sys.seconds || err < 0) {

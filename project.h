@@ -12,6 +12,9 @@
 #include	"hardware/structs/ioqspi.h"
 #include	"hardware/structs/sio.h"
 
+// WIFI COUNTRY
+#define	PROJECT_WIFI_COUNTRY	CYW43_COUNTRY_TURKEY
+
 
 #define	DEBUG	1
 /*
@@ -32,7 +35,7 @@ typedef	struct {
 	int			analogon;
 	char			hostadr[32];
 	int			hostport;
-	uint8_t			aps[4][3][32];
+	uint8_t		aps[4][3][32];
 	uint64_t		runcount;
 	int			doupdate;
 	int			newSize;

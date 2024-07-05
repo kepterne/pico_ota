@@ -13,6 +13,7 @@
 #include	"wifi.h"
 #include	"md5.h"
 #include	"hardware/adc.h"
+#include	"hardware/watchdog.h"
 
 #include	"pico/cyw43_arch.h"
 
@@ -58,7 +59,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 				strcpy(config.firmwarename, p3);
 				config.newPos = 0;
 				config.doupdate = 1;
-				sys.saveconfig = 1;
+				//sys.saveconfig = 1;
 			}
 		} else if (strcasecmp(p2, "now") == 0) {
 			time_t	ts = 0;
@@ -94,6 +95,26 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 		}
 	}
 	break;
+	case CMD_TCP_BINARY: {
+		uint32_t 	ints;
+		TCP_C	*tc = (TCP_C *) p1;
+		uintptr_t	addr = new_flash_addr;
+		addr += tc->binary_off;
+
+		printf("BINARY DATA %u %u\r\n", tc->binary_off, config.newPos);
+		if (config.newPos == tc->binary_off) {
+			printf("PROGRAMMING FLASH %u\r\n");
+			ints = save_and_disable_interrupts();
+			flash_range_erase(addr, FLASH_SECTOR_SIZE);
+			flash_range_program(addr, tc->binary, FLASH_SECTOR_SIZE);
+			restore_interrupts (ints);
+			printf("FLASH PROGRAMMED \r\n");
+			config.newPos += FLASH_SECTOR_SIZE;
+			config.doupdate = 1;
+			sys.saveconfig = 1;
+		}
+	}
+	break;
 	case CMD_TCP_DATA: {
 		TCP_C	*tc = (TCP_C *) p1;
 		int		l = (int) p3;
@@ -104,6 +125,16 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			return;
 		p += 9;
 		l -= 9;
+		if (strncmp(p, "DWL ", 4) == 0) {
+			uint32_t	pos, size;
+			if (sscanf(p + 4, "%u %u", &pos, &size) == 2) {
+				tc->binary_off = pos;
+				tc->binary_size = size;
+				tc->binary_p = 0;
+				tc->binary[0] = 0;
+				return;
+			}
+ 		}
 		if (*p == '~') {
 			ProcessFields(tc, p);
 		} else if (strncmp(p, "PING ", 5) == 0) {
@@ -115,12 +146,8 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 				l = sprintf(tc->senddata, "\nPING: %" PRIu64 "\n", i);
 				tcpc_send(tc, tc->senddata, l);
 			}
-		/*	if (config.doupdate) {
-				printf("\r\nUPDATE IS REQUESTED %d\r\n", l);
-				printf("\nGET %d %d\n", config.newPos, FLASH_SECTOR_SIZE);
-				sprintf(tc->senddata + l, "\n~psize(%u) poff(%u)~\n", config.newPos, FLASH_SECTOR_SIZE);
-			}
-		*/
+			
+		
 		} else if (strncmp(p, "KIMO ", 5) == 0) {
 			char  challenge[64];
 			uint8_t md5[32];
@@ -137,7 +164,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 				sys.seconds, 
 				sys.id,
 				sys.version,
-				config.aps[current_ap][0]
+				sys.access_point
 			);
 			tcpc_send(tc, tc->senddata, l);
 		}
@@ -163,14 +190,21 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			lcd_set_cursor(3, 0);
 			lcd_string(p2);
 		}
-		connect_to_tcp(&ServerConnection, config.hostadr, config.hostport);
+		connect_to_host(&ServerConnection, config.hostadr, config.hostport);
 	}
 	break;
 	case CMD_WIFI_TICK: {
-		printf("W TICK %04X\r\n", ServerConnection.state);
+		printf("W TICK %04X %d\r\n", ServerConnection.state, config.doupdate );
 		if (ServerConnection.state == TCPS_DISCONNECTED)
-			connect_to_tcp(&ServerConnection, config.hostadr, config.hostport);
-
+			connect_to_host(&ServerConnection, config.hostadr, config.hostport);
+		else if (ServerConnection.state == TCPS_CONNECTED) {
+			if (config.doupdate == 1) {
+				config.doupdate = 2;
+				
+				int l = sprintf(ServerConnection.senddata, "~psize(%u) poff(%u)~\r\n", FLASH_SECTOR_SIZE, config.newPos);
+				tcpc_send(&ServerConnection, ServerConnection.senddata, l);
+			}
+		}
 	}
 	break;
 	case CMD_WIFI_DISCONNECTED: {
@@ -262,9 +296,11 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 int	main(void) {
 	uint64_t	secs = 0;
 	initSys(&sys, System);
+	watchdog_enable(10000, 0);
 	for ( ; ; ) {
 		loopSys(&sys);
 		loop_wifi();
+		watchdog_update();
 		if (secs != sys.seconds) {
 			secs = sys.seconds;
 			DrawPrompt();

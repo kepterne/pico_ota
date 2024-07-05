@@ -24,6 +24,7 @@
 
 
 #define	CMD_TCP_DATA		0x00B0
+#define	CMD_TCP_BINARY		0x00B8
 #define	CMD_PARAM			0x00C0
 
 typedef	struct {
@@ -72,6 +73,7 @@ int	TouchLoop(int GPIN);
 extern	char			*flash_start;
 extern	uintptr_t		flash_addr;
 extern	SystemConfig	sys;
+extern	uintptr_t		new_flash_addr;
 #endif
 
 void	SaveCursor(void);
