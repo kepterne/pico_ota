@@ -18,6 +18,70 @@
 #include	"pico/cyw43_arch.h"
 
 int	anok = 2;
+static void jump_to_vtor(uint32_t vtor) {
+    // Derived from the Leaf Labs Cortex-M3 bootloader.
+    // Copyright (c) 2010 LeafLabs LLC.
+    // Modified 2021 Brian Starkey <stark3y@gmail.com>
+    // Originally under The MIT License
+
+    uint32_t reset_vector = *(volatile uint32_t *) (vtor);
+    
+    asm volatile("msr msp, %0" ::"g"(*(volatile uint32_t *) vtor));
+    asm volatile("bx %0" ::"r"(reset_vector));
+}
+
+void	__no_inline_not_in_flash_func(update_fw)(uintptr_t	saddr, uintptr_t	daddr, int		sz) {
+	uint32_t 	ints;
+	int	osz = sz;
+	if (sz % FLASH_SECTOR_SIZE) {
+		sz -= sz % FLASH_SECTOR_SIZE;
+		sz += FLASH_SECTOR_SIZE;
+	}
+	uint32_t	pos = 0;
+	char		buf[FLASH_SECTOR_SIZE];
+
+	char		md5txt[64];
+	uint8_t	md5[32];
+	md5_buffer((char *) (saddr + XIP_BASE), osz, md5);
+	md5_digest_string(md5, md5txt);
+	printf("MD5 NEW %d %s\r\n", osz, md5txt);
+	uint16_t	sz2 = sys.size;
+	md5_buffer((char *) (XIP_BASE), sz2, md5);
+	md5_digest_string(md5, md5txt);
+	printf("MD5 CURRENT %d %s\r\n", sz2, md5txt);
+	printf("FUNCTION ADDRESS %p\r\n", update_fw);
+
+	daddr = 0;
+	ints = save_and_disable_interrupts();
+	int	z = 0;
+	for (pos = 0 ; pos < sz; pos += FLASH_SECTOR_SIZE) {
+		memcpy(buf, (char *) (saddr + XIP_BASE), FLASH_SECTOR_SIZE);
+		
+				flash_range_erase(daddr, FLASH_SECTOR_SIZE);
+				flash_range_program(daddr, buf, FLASH_SECTOR_SIZE);
+			//	restore_interrupts (ints);
+				z += memcmp((char *) (daddr + XIP_BASE),  buf, FLASH_SECTOR_SIZE) == 0;
+				//if ( != 0) {
+			//		printf("WRITE %d %u\r\n", z, daddr);
+				//}
+				watchdog_update();
+			//	ints = save_and_disable_interrupts();
+		
+		
+		saddr += FLASH_SECTOR_SIZE;
+		daddr += FLASH_SECTOR_SIZE;
+	}
+	//ints = save_and_disable_interrupts();
+	//flash_flush_cache(); // Note this is needed to remove CSn IO force as well as cache flushing 
+     	//flash_enable_xip_via_boot2();
+	md5_buffer((char *) (XIP_BASE), sz2, md5);
+	md5_digest_string(md5, md5txt);
+
+	restore_interrupts (ints);
+	printf("MD5 FINAL %d %s %d\r\n", osz, md5txt, z);
+	for ( ; ; ) tight_loop_contents();
+
+}
 
 void	ProcessFields(TCP_C *tc, char *p) {
 	if (*p != '~')
@@ -59,7 +123,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 				strcpy(config.firmwarename, p3);
 				config.newPos = 0;
 				config.doupdate = 1;
-				//sys.saveconfig = 1;
+				sys.saveconfig = 1;
 			}
 		} else if (strcasecmp(p2, "now") == 0) {
 			time_t	ts = 0;
@@ -103,14 +167,27 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 
 		printf("BINARY DATA %u %u\r\n", tc->binary_off, config.newPos);
 		if (config.newPos == tc->binary_off) {
-			printf("PROGRAMMING FLASH %u\r\n");
-			ints = save_and_disable_interrupts();
-			flash_range_erase(addr, FLASH_SECTOR_SIZE);
-			flash_range_program(addr, tc->binary, FLASH_SECTOR_SIZE);
-			restore_interrupts (ints);
-			printf("FLASH PROGRAMMED \r\n");
-			config.newPos += FLASH_SECTOR_SIZE;
-			config.doupdate = 1;
+			printf("PROGRAMMING FLASH %p\r\n", addr);
+			if (memcmp((char *) (addr + XIP_BASE), tc->binary, FLASH_SECTOR_SIZE)) { 
+				ints = save_and_disable_interrupts();
+				
+				flash_range_erase(addr, FLASH_SECTOR_SIZE);
+				flash_range_program(addr, tc->binary, FLASH_SECTOR_SIZE);
+				restore_interrupts (ints);
+				printf("FLASH PROGRAMMED \r\n");
+				if (memcmp((char *) (addr + XIP_BASE), tc->binary, FLASH_SECTOR_SIZE)) {
+					printf("FLASH PROGRAMMING FAILED %p\r\n", addr);
+				}
+			} else {
+				printf("FLASH NOT CHANGED %p\r\n", addr);
+			}
+			if (tc->binary_size != FLASH_SECTOR_SIZE) {
+				config.newPos += tc->binary_size;
+				config.doupdate = 3;
+			} else {
+				config.newPos += FLASH_SECTOR_SIZE;
+				config.doupdate = 1;
+			}
 			sys.saveconfig = 1;
 		}
 	}
@@ -203,6 +280,10 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 				
 				int l = sprintf(ServerConnection.senddata, "~psize(%u) poff(%u)~\r\n", FLASH_SECTOR_SIZE, config.newPos);
 				tcpc_send(&ServerConnection, ServerConnection.senddata, l);
+			} else if (config.doupdate == 3) {
+				printf("FLASHING %p %p %u\r\n", new_flash_addr, (char *) XIP_BASE, config.newPos);
+				SaveConfig(&config);
+				update_fw(new_flash_addr, XIP_BASE, config.newPos);
 			}
 		}
 	}
@@ -259,7 +340,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			printf("\r\n\x1B[2J");
 			ClearPrompt();
 		} else if (strcmp(p[0], "ID") == 0) {
-			printf("ID: %s\r\n\tVersion:%s\r\n\tf:%p\r\n\tsize:%u, %u\r\n\tc:%llu\r\n\tFS:%u\r\n", sys.id, sys.version, flash_start, sys.size, sys.size/FLASH_PAGE_SIZE, config.runcount, sys.flashsize/FLASH_PAGE_SIZE);
+			printf("ID: %s\r\n\tVersion:%s\r\n\tf:%p\r\n\tsize:%u, %u\r\n\tc:%llu\r\n\tFS:%u\r\nmagix: %s\r\n", sys.id, sys.version, flash_start, sys.size, sys.size/FLASH_PAGE_SIZE, config.runcount, sys.flashsize/FLASH_PAGE_SIZE, config.magic);
 		} else if (strcmp(p[0], "RESET") == 0) {
 			resetPico();
 		} else if (strcmp(p[0], "USB") == 0) {

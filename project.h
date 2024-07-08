@@ -54,7 +54,7 @@ typedef	union {
 #ifdef	main_c
 		char		SharedSecret[64] = "canEliffilEnac";
 		StoredConfig	config = {
-			"pico_ota_4",			// DEGERLERDE DEGISIKLIK YAPINCA BUT STRING'I DE DEGISTIRIN
+			"pico_ota_new",			// DEGERLERDE DEGISIKLIK YAPINCA BUT STRING'I DE DEGISTIRIN
 			"pico_ota",
 			1,						// echo on
 			1,						// lcd on
@@ -69,14 +69,15 @@ typedef	union {
 					"movita568d"
 				},
 				*/
-			{
+				{
 					"",
 					"sparky",
 					"23646336"
 				},
 				{	
-					{0x30,0xcc,0x21,0x3e,0x2c,0x30},
-					"",
+					//{0x30,0xcc,0x21,0x3e,0x2c,0x30},
+					""
+					"sdasdasdasdasd",
 					"1qazoFa1s4B"
 				},
 				
