@@ -50,7 +50,7 @@ bool __no_inline_not_in_flash_func(get_bootsel_button)() {
 
 time_t	getTime(void) {
 	time_t	t;
-	if (!sys.sStartTime)
+	if (!sys.sBaseTime)
 		return 0;
 	return 
 		(
@@ -125,7 +125,7 @@ void	initSys(SystemConfig *s, void (*f)(uint32_t, char *, char *, char *, char *
 	
 	pp = &__flash_binary_end;
 	
-	s->size = ((uint32_t) pp) - ((uint32_t) flash_start);
+	s->size = ((uint32_t) pp) - XIP_BASE;
 	uintptr_t tt = (uintptr_t) pp;
 	if (tt % FLASH_SECTOR_SIZE)
 		tt = tt + FLASH_SECTOR_SIZE - (tt % FLASH_SECTOR_SIZE);

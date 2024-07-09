@@ -31,8 +31,6 @@
 typedef	struct {
 	char			magic[128];
 	char			name[64];
-	int			lcdon;
-	int			analogon;
 	char			hostadr[32];
 	int			hostport;
 	uint8_t		aps[4][3][32];
@@ -54,10 +52,8 @@ typedef	union {
 #ifdef	main_c
 		char		SharedSecret[64] = "canEliffilEnac";
 		StoredConfig	config = {
-			"pico_ota_new",			// DEGERLERDE DEGISIKLIK YAPINCA BUT STRING'I DE DEGISTIRIN
+			"pico_ota_7",			// DEGERLERDE DEGISIKLIK YAPINCA BUT STRING'I DE DEGISTIRIN
 			"pico_ota",
-			1,						// echo on
-			1,						// lcd on
 			"173.255.229.145",
 			//"www.google.com",
 			//"192.168.1.24",

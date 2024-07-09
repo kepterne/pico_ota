@@ -14,20 +14,17 @@
 #include	"md5.h"
 #include	"hardware/adc.h"
 #include	"hardware/watchdog.h"
+#include	"hardware/rtc.h"
+#include	"pico_sleep.h"
 
 #include	"pico/cyw43_arch.h"
 
 int	anok = 2;
-static void jump_to_vtor(uint32_t vtor) {
-    // Derived from the Leaf Labs Cortex-M3 bootloader.
-    // Copyright (c) 2010 LeafLabs LLC.
-    // Modified 2021 Brian Starkey <stark3y@gmail.com>
-    // Originally under The MIT License
 
-    uint32_t reset_vector = *(volatile uint32_t *) (vtor);
-    
-    asm volatile("msr msp, %0" ::"g"(*(volatile uint32_t *) vtor));
-    asm volatile("bx %0" ::"r"(reset_vector));
+static void sleep_callback(void) {
+    printf("RTC woke us up\n");
+    watchdog_reboot(0, 0, 0);
+    sleep_ms(1000);
 }
 
 void	__no_inline_not_in_flash_func(update_fw)(uintptr_t	saddr, uintptr_t	daddr, int		sz) {
@@ -45,13 +42,15 @@ void	__no_inline_not_in_flash_func(update_fw)(uintptr_t	saddr, uintptr_t	daddr, 
 	md5_buffer((char *) (saddr + XIP_BASE), osz, md5);
 	md5_digest_string(md5, md5txt);
 	printf("MD5 NEW %d %s\r\n", osz, md5txt);
-	uint16_t	sz2 = sys.size;
+	uint32_t	sz2 = sys.size;
 	md5_buffer((char *) (XIP_BASE), sz2, md5);
 	md5_digest_string(md5, md5txt);
-	printf("MD5 CURRENT %d %s\r\n", sz2, md5txt);
+	printf("MD5 CURRENT %u %s\r\n", sz2, md5txt);
 	printf("FUNCTION ADDRESS %p\r\n", update_fw);
 
 	daddr = 0;
+
+			*((uint32_t *) 0x40058000) &= ~(1<<30);
 	ints = save_and_disable_interrupts();
 	int	z = 0;
 	for (pos = 0 ; pos < sz; pos += FLASH_SECTOR_SIZE) {
@@ -64,7 +63,7 @@ void	__no_inline_not_in_flash_func(update_fw)(uintptr_t	saddr, uintptr_t	daddr, 
 				//if ( != 0) {
 			//		printf("WRITE %d %u\r\n", z, daddr);
 				//}
-				watchdog_update();
+				//watchdog_update();
 			//	ints = save_and_disable_interrupts();
 		
 		
@@ -79,6 +78,8 @@ void	__no_inline_not_in_flash_func(update_fw)(uintptr_t	saddr, uintptr_t	daddr, 
 
 	restore_interrupts (ints);
 	printf("MD5 FINAL %d %s %d\r\n", osz, md5txt, z);
+	watchdog_enable(0, 0);
+	watchdog_reboot(0, 0, 0);
 	for ( ; ; ) tight_loop_contents();
 
 }
@@ -109,7 +110,9 @@ void	ProcessFields(TCP_C *tc, char *p) {
 }
 
 TCP_C	ServerConnection;
-
+void	alarm_callback(void) {
+	printf(" <<<<<<< ALARM >>>>>>>\r\n");
+}
 void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 	switch (cmd) {
 	case CMD_PARAM: {
@@ -127,13 +130,29 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			}
 		} else if (strcasecmp(p2, "now") == 0) {
 			time_t	ts = 0;
+			struct	tm *t;
 			sscanf(p3, "%lu", &ts);
 			ts += 3 * 3600;	// TURKISH TZ FIX
 			sys.sBaseTime = ts;
 			sys.sStartTime = sys.seconds;
-			struct tm	*t;
+			
+			datetime_t dt;
+			bzero(&dt, sizeof(dt));
+			
 			t = localtime(&ts);
-			printf("@ TIME SYNCED: %04d %02d %02d - %02d %02d %02d\r\n",
+			dt.year = t->tm_year + 1900;
+			dt.month = t->tm_mon + 1;
+			dt.day = t->tm_mday;
+			dt.dotw = t->tm_wday;
+			dt.hour = t->tm_hour;
+			dt.min = t->tm_min;
+			dt.sec = t->tm_sec;
+			rtc_init();
+			int z = rtc_set_datetime(&dt) != 0;
+			
+			printf("@ <%d> %d TIME SYNCED: %04d %02d %02d - %02d %02d %02d\r\n",
+				z,
+				t->tm_wday,
 				t->tm_year + 1900,
 				t->tm_mon + 1,
 				t->tm_mday,
@@ -156,6 +175,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 				t->tm_min,
 				t->tm_sec
 			);
+			
 		}
 	}
 	break;
@@ -253,20 +273,14 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 		pp[0], pp[1], pp[2], pp[3], pp[4], pp[5],
 		p2
 		);
-		if (config.lcdon) {
-			lcd_set_cursor(2, 0);
-			lcd_string(p1);
-		}
+		
 	}
 	break;
 
 	case CMD_WIFI_CONNECTED: {
 		printf("Connected to : \"%s\" ip: %s, gw: %s\r\n", p1, p2, p3);
 		sys.last_read = sys.seconds;
-		if (config.lcdon) {
-			lcd_set_cursor(3, 0);
-			lcd_string(p2);
-		}
+		
 		connect_to_host(&ServerConnection, config.hostadr, config.hostport);
 	}
 	break;
@@ -327,16 +341,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 		int		idx, val;
 		int		segs = (int) p4;
 		char		**p = (char **) p3;
-		if (strcmp(p[0], "DMA") == 0) {
-			int	i = analog_toggle();
-			printf("ANALOG READER IS %s\r\n", i ? "ON" : "OFF");
-			config.analogon = i;
-			sys.saveconfig = 1;
-		} else if (strcmp(p[0], "LCD") == 0) {
-			config.lcdon = lcd_toggle();
-			sys.saveconfig = 1;
-			printf("LCD IS %s\r\n", config.lcdon  ? "ON" : "OFF");		
-		} else if (strcmp(p[0], "CLR") == 0) {
+		if (strcmp(p[0], "CLR") == 0) {
 			printf("\r\n\x1B[2J");
 			ClearPrompt();
 		} else if (strcmp(p[0], "ID") == 0) {
@@ -345,7 +350,41 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			resetPico();
 		} else if (strcmp(p[0], "USB") == 0) {
 			reset_usb_boot(0, 0);
-		} 
+		} else if (strcmp(p[0], "SLEEP") == 0) {
+			time_t	ts;
+			struct tm	*t;
+			datetime_t	dt;
+			int	offs = 10;
+			sscanf(p[1], "%u", &offs);
+			ts = getTime();
+			ts += offs;
+			bzero(&dt, sizeof(dt));
+			
+			t = localtime(&ts);
+			
+			dt.year = t->tm_year + 1900;
+			dt.month = t->tm_mon + 1;
+			dt.day = t->tm_mday;
+			dt.dotw = t->tm_wday;
+			dt.hour = t->tm_hour;
+			dt.min = t->tm_min;
+			dt.sec = t->tm_sec;
+
+			printf("@ ALARM SET TO: %04d %02d %02d - %02d %02d %02d\r\n",
+				t->tm_year + 1900,
+				t->tm_mon + 1,
+				t->tm_mday,
+				t->tm_hour,
+				t->tm_min,
+				t->tm_sec
+			);
+			//uart_default_tx_wait_blocking();
+			//watchdog_enable(0, 0);
+			//watchdog_enable()
+			*((uint32_t *) 0x40058000) &= ~(1<<30);
+			sleep_run_from_rosc();
+			sleep_goto_sleep_until(&dt, sleep_callback);
+		}
 	}
 	break;
 	case CMD_BUTTON_PRESS: {
@@ -364,6 +403,7 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 			printf("CONFIG STORED\r\n");
 	break;
 	case CMD_PROGRAM_INIT: {
+
 			ClearPrompt();
 			DrawPrompt();
 			GotoCursor(1, 2);

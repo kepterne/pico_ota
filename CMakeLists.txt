@@ -8,14 +8,14 @@ set(ENV{PROJECT} pico_ota)
 
 #include(pico_sdk_import.cmake)
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
-
+include($ENV{PICO_EXTRAS_PATH}/external/pico_extras_import.cmake)
 # Define project
 project($ENV{PROJECT})
 pico_sdk_init()
 add_definitions( -DVERSION_MAJOR=$ENV{VERSION_MAJOR} )
 add_definitions( -DVERSION_MINOR=$ENV{VERSION_MINOR} )
 
-add_executable($ENV{PROJECT} main.c common.c analog_reader.c lcd_display.c wifi.c md5.c)
+add_executable($ENV{PROJECT} main.c common.c analog_reader.c lcd_display.c wifi.c md5.c pico_sleep.c)
 
 #
 target_include_directories($ENV{PROJECT} PRIVATE
@@ -28,6 +28,11 @@ target_link_libraries($ENV{PROJECT} pico_cyw43_arch_lwip_threadsafe_background)
 target_link_libraries($ENV{PROJECT} pico_multicore)
 target_link_libraries($ENV{PROJECT} hardware_dma)
 target_link_libraries($ENV{PROJECT} hardware_i2c)
+target_link_libraries($ENV{PROJECT} hardware_clocks)
+target_link_libraries($ENV{PROJECT} hardware_rosc)
+target_link_libraries($ENV{PROJECT} hardware_rtc)
+
+
 
 pico_enable_stdio_usb($ENV{PROJECT} 1)
 pico_enable_stdio_uart($ENV{PROJECT} 1)
