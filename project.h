@@ -52,7 +52,7 @@ typedef	union {
 #ifdef	main_c
 		char		SharedSecret[64] = "canEliffilEnac";
 		StoredConfig	config = {
-			"pico_ota_7",			// DEGERLERDE DEGISIKLIK YAPINCA BUT STRING'I DE DEGISTIRIN
+			"pico_ota!",			// DEGERLERDE DEGISIKLIK YAPINCA BUT STRING'I DE DEGISTIRIN
 			"pico_ota",
 			"173.255.229.145",
 			//"www.google.com",

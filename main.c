@@ -48,37 +48,44 @@ void	__no_inline_not_in_flash_func(update_fw)(uintptr_t	saddr, uintptr_t	daddr, 
 	printf("MD5 CURRENT %u %s\r\n", sz2, md5txt);
 	printf("FUNCTION ADDRESS %p\r\n", update_fw);
 
+	printf("DONE MODE 1---\r\n");
 	daddr = 0;
 
-			*((uint32_t *) 0x40058000) &= ~(1<<30);
+	*((uint32_t *) 0x40058000) &= ~(1<<30);
 	ints = save_and_disable_interrupts();
 	int	z = 0;
 	for (pos = 0 ; pos < sz; pos += FLASH_SECTOR_SIZE) {
 		memcpy(buf, (char *) (saddr + XIP_BASE), FLASH_SECTOR_SIZE);
-		
-				flash_range_erase(daddr, FLASH_SECTOR_SIZE);
-				flash_range_program(daddr, buf, FLASH_SECTOR_SIZE);
-			//	restore_interrupts (ints);
-				z += memcmp((char *) (daddr + XIP_BASE),  buf, FLASH_SECTOR_SIZE) == 0;
-				//if ( != 0) {
-			//		printf("WRITE %d %u\r\n", z, daddr);
-				//}
-				//watchdog_update();
-			//	ints = save_and_disable_interrupts();
-		
-		
+
+		flash_range_erase(daddr, FLASH_SECTOR_SIZE);
+		for (int j = 0; j < 16; j++) {
+			flash_range_program(daddr + j * 256, buf + j * 256, 256); // FLASH_SECTOR_SIZE);
+			
+		}
+		watchdog_update();
+		///restore_interrupts (ints);
+		//	z = memcmp((char *) (daddr + XIP_BASE),  buf, FLASH_SECTOR_SIZE) == 0;
+		//	if (z != 0) {
+		//		printf("WRITE %d %u\r\n", z, daddr);
+		//	}
+		//	watchdog_update();
+		//	ints = save_and_disable_interrupts();
 		saddr += FLASH_SECTOR_SIZE;
 		daddr += FLASH_SECTOR_SIZE;
 	}
 	//ints = save_and_disable_interrupts();
 	//flash_flush_cache(); // Note this is needed to remove CSn IO force as well as cache flushing 
      	//flash_enable_xip_via_boot2();
-	md5_buffer((char *) (XIP_BASE), sz2, md5);
-	md5_digest_string(md5, md5txt);
+//	md5_buffer((char *) (XIP_BASE), sz2, md5);
+//	md5_digest_string(md5, md5txt);
 
 	restore_interrupts (ints);
-	printf("MD5 FINAL %d %s %d\r\n", osz, md5txt, z);
-	watchdog_enable(0, 0);
+//	printf("MD5 FINAL %d %s %d\r\n", osz, md5txt, z);
+//	watchdog_enable(0, 0);
+//	watchdog_reboot(0, 0, 0);
+	*((uint32_t *) 0x40058000) |= (1<<30);
+
+	printf("DONE MODE 2---\r\n");
 	watchdog_reboot(0, 0, 0);
 	for ( ; ; ) tight_loop_contents();
 
@@ -286,6 +293,18 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 	break;
 	case CMD_WIFI_TICK: {
 		printf("W TICK %04X %d\r\n", ServerConnection.state, config.doupdate );
+		float vcc = 0;
+		uint32_t vccu = 0;
+		if (vccu == 0) {
+			adc_init();
+			adc_gpio_init(29);
+		}
+
+		adc_select_input(3);
+		vccu = adc_read();
+		vcc = vccu * 3.0 * 3.3f / (1 << 12);
+		int zz = sprintf(ServerConnection.senddata, "~vcc(%4.2f) vccu(%u)~\r\n", vcc, vccu);
+		tcpc_send(&ServerConnection, ServerConnection.senddata, zz);
 		if (ServerConnection.state == TCPS_DISCONNECTED)
 			connect_to_host(&ServerConnection, config.hostadr, config.hostport);
 		else if (ServerConnection.state == TCPS_CONNECTED) {
@@ -295,9 +314,13 @@ void	System(uint32_t cmd, char *p1, char *p2, char *p3, char *p4) {
 				int l = sprintf(ServerConnection.senddata, "~psize(%u) poff(%u)~\r\n", FLASH_SECTOR_SIZE, config.newPos);
 				tcpc_send(&ServerConnection, ServerConnection.senddata, l);
 			} else if (config.doupdate == 3) {
+				uint32_t	dw = config.newPos;
 				printf("FLASHING %p %p %u\r\n", new_flash_addr, (char *) XIP_BASE, config.newPos);
+				config.newPos = 0;
+				config.doupdate = 0;
+				config.magic[0] = 0;
 				SaveConfig(&config);
-				update_fw(new_flash_addr, XIP_BASE, config.newPos);
+				update_fw(new_flash_addr, XIP_BASE, dw);
 			}
 		}
 	}
